@@ -1,0 +1,1091 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Salisbury Zoo Sketchbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
+<script src="https://js.arcgis.com/4.33/"></script>
+<style>
+  html, body { margin: 0; height: 100%; background: #d6e3a8; font-family: "Patrick Hand", system-ui, sans-serif; }
+  #viewDiv { position: absolute; inset: 0; }
+
+  /* sketchbook basemap: softer, warmer colors plus paper grain */
+  #viewDiv .esri-view-surface canvas { filter: saturate(.5) sepia(.22) brightness(1.05) contrast(.92); }
+  #viewDiv .esri-view-surface::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none; mix-blend-mode: multiply; opacity: .35;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' seed='2'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .36 0 0 0 0 .25 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23p)'/%3E%3C/svg%3E");
+  }
+
+  /* stacking: map < place tags < animals < title < name tag */
+  #places, #critters { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  #places { z-index: 1; }
+  #critters { z-index: 2; }
+
+  /* amenities: green-ink pills with a tiny drawn icon; services get round badges */
+  .amenity, .badge {
+    position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 3px;
+    background: #eef2df; color: #3d4a26; border: 1.5px solid #6f7f45;
+    box-shadow: 1px 2px 0 rgba(90, 110, 50, .35); white-space: nowrap;
+  }
+  .amenity { border-radius: 999px; padding: 1px 10px 1px 4px; font-size: 15px; line-height: 1.2; }
+  .amenity small { opacity: .6; font-size: 12px; margin-left: 2px; }
+  .badge { border-radius: 999px; padding: 2px 4px; }
+  .amenity svg, .badge svg { width: 18px; height: 18px; flex: none; }
+
+  .place {
+    position: absolute; left: 0; top: 0; transform-origin: 50% 50%;
+    background: #fbf5e6; color: #4a3423; border: 1.5px solid #8a6a4a; border-radius: 4px;
+    padding: 1px 8px 2px; font-size: 15px; line-height: 1.15; white-space: nowrap;
+    box-shadow: 1px 2px 0 rgba(122, 92, 62, .35);
+  }
+
+  .critter {
+    position: absolute; left: 0; top: 0; width: 90px;
+    transform-origin: 50% 92%;
+    will-change: transform;
+    filter: drop-shadow(0 2px 1.5px rgba(70, 45, 20, .35));
+  }
+  .critter svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+  #title {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%) rotate(-1deg);
+    background: #fffaf0; color: #3b2a1c; padding: 6px 18px; border-radius: 6px;
+    font-size: 26px; box-shadow: 0 2px 0 #c9b48f, 0 4px 10px rgba(0,0,0,.15);
+    border: 2px solid #7a5c3e; pointer-events: none; white-space: nowrap; z-index: 3;
+  }
+  #tip {
+    position: absolute; pointer-events: none; background: #fbf5e6; color: #3b2a1c; z-index: 4;
+    border: 1.5px solid #8a6a4a; border-radius: 4px; padding: 0 9px 1px; font-size: 17px;
+    box-shadow: 1px 2px 0 rgba(122, 92, 62, .35);
+    transform: translate(-50%, 0) rotate(-1.5deg); opacity: 0; transition: opacity .15s; white-space: nowrap;
+  }
+
+  /* ---------- subtle life ---------- */
+  .critter * { transform-box: fill-box; }
+  .breathe { transform-origin: 50% 100%; animation: breathe 3.8s ease-in-out infinite; animation-delay: var(--d); }
+  @keyframes breathe { 50% { transform: scale(1.01, 1.025); } }
+
+  .swish { animation: swish 3.2s ease-in-out infinite; animation-delay: var(--d); }
+  @keyframes swish { 0%,100% { transform: rotate(-5deg); } 50% { transform: rotate(7deg); } }
+
+  .twitch { animation: twitch 5s ease-in-out infinite; animation-delay: var(--d); }
+  @keyframes twitch { 0%,70%,100% { transform: rotate(0); } 78% { transform: rotate(14deg); } 86% { transform: rotate(-4deg); } }
+
+  .blink { transform-origin: 50% 50%; animation: blink 5.5s infinite; animation-delay: var(--d); }
+  @keyframes blink { 0%,93%,100% { transform: scaleY(1); } 95.5% { transform: scaleY(.1); } }
+
+  .flick { animation: flick 6.5s infinite; animation-delay: var(--d); }
+  @keyframes flick { 0%,86%,100% { transform: rotate(0); } 88% { transform: rotate(-14deg); } 91% { transform: rotate(3deg); } 93% { transform: rotate(0); } }
+
+  .graze { animation: graze 7s ease-in-out infinite; animation-delay: var(--d); }
+  @keyframes graze { 0%,35%,100% { transform: rotate(0); } 50%,70% { transform: rotate(-6deg); } }
+
+  .look { animation: look 8s ease-in-out infinite; animation-delay: var(--d); }
+  @keyframes look { 0%,30%,100% { transform: rotate(0); } 40%,60% { transform: rotate(-9deg); } 70%,85% { transform: rotate(5deg); } }
+
+  .sway { animation: sway 4.5s ease-in-out infinite; animation-delay: var(--d); }
+  @keyframes sway { 0%,100% { transform: rotate(-2.5deg); } 50% { transform: rotate(3deg); } }
+
+  .bob { animation: bob 4.5s ease-in-out infinite; animation-delay: var(--d); }
+  @keyframes bob { 50% { transform: translateY(-1.5px); } }
+
+  .flapL { transform-origin: 100% 50%; animation: flap .9s ease-in-out infinite; }
+  .flapR { transform-origin: 0% 50%; animation: flap .9s ease-in-out infinite; }
+  @keyframes flap { 0%,100% { transform: scaleX(1); } 50% { transform: scaleX(.3); } }
+
+  /* ---------- moments: one animal at a time, or on hover ---------- */
+  .howl-lines, .splash, .m-wingL, .m-wingR { opacity: 0; }
+  .moment .m-howl { animation: howl 3.2s ease-in-out both; }
+  @keyframes howl { 0%,100% { transform: rotate(0); } 20%,80% { transform: rotate(30deg); } }
+  .moment .howl-lines { animation: howlLines 3.2s ease-in-out both; }
+  @keyframes howlLines { 0%,25%,85%,100% { opacity: 0; transform: translateY(0); } 40%,70% { opacity: 1; transform: translateY(-4px); } }
+
+  .moment .m-graze { animation: grazeDeep 4.5s ease-in-out both; }
+  @keyframes grazeDeep { 0%,100% { transform: rotate(0); } 20%,75% { transform: rotate(-72deg); } 35%,45%,60% { transform: rotate(-68deg); } 40%,55% { transform: rotate(-74deg); } }
+
+  .m-pop { transform-origin: 50% 100%; }
+  .moment .m-pop { animation: pop 3.6s ease-in-out both; }
+  @keyframes pop { 0%,100% { transform: translateY(0); } 15% { transform: translateY(-4px); } 28%,62% { transform: translateY(84px); } 75% { transform: translateY(-6px); } 85% { transform: translateY(0); } }
+
+  .moment .m-tuck { animation: tuck 4.5s ease-in-out both; }
+  @keyframes tuck { 0%,100% { transform: rotate(0) scale(1); } 25%,78% { transform: rotate(80deg) scale(.6); } }
+
+  .moment .m-wingL, .moment .m-wingR { animation: wings 2.6s ease-in-out both; }
+  @keyframes wings { 0%,100% { opacity: 0; transform: scale(.2, .5); } 12% { opacity: 1; transform: scale(1, 1); } 28% { transform: scale(1, .55); } 44% { transform: scale(1, 1); } 60% { transform: scale(1, .55); } 76% { opacity: 1; transform: scale(1, 1); } 90% { opacity: 0; transform: scale(.2, .5); } }
+
+  .moment .m-slap { animation: slap 2.4s ease-in both; }
+  @keyframes slap { 0%,100% { transform: rotate(0); } 35%,45% { transform: rotate(-38deg); } 55% { transform: rotate(5deg); } 65% { transform: rotate(0); } }
+  .moment .splash { animation: splash 2.4s ease-out both; }
+  @keyframes splash { 0%,52%,100% { opacity: 0; transform: translateY(0); } 58% { opacity: 1; } 80% { opacity: 0; transform: translateY(-6px); } }
+
+  .moment .m-swivel { animation: swivel 3.4s ease-in-out both; }
+  @keyframes swivel { 0%,100% { transform: rotate(0); } 20%,40% { transform: rotate(-30deg); } 60%,80% { transform: rotate(26deg); } }
+
+  @media (prefers-reduced-motion: reduce) { .critter * { animation: none !important; } }
+</style>
+</head>
+<body>
+<div id="viewDiv"></div>
+<div id="places"></div>
+<div id="critters"></div>
+<div id="title">The Salisbury Zoo</div>
+<div id="tip"></div>
+
+<!-- Shared pencil textures -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- wobbly hand-drawn edges -->
+    <filter id="rough" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="2" seed="4" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="2.4" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <!-- colored pencil fill: light base layer plus toothy paper grain -->
+    <filter id="pencil" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="2" seed="4" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="2.4" xChannelSelector="R" yChannelSelector="G" result="w"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.9 0.12" numOctaves="2" seed="11" result="g"/>
+      <feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  3.2 0 0 0 -0.85" result="ga"/>
+      <feComposite in="w" in2="ga" operator="in" result="tex"/>
+      <feComponentTransfer in="w" result="base"><feFuncA type="linear" slope="0.6"/></feComponentTransfer>
+      <feMerge><feMergeNode in="base"/><feMergeNode in="tex"/></feMerge>
+    </filter>
+    <pattern id="hatch" width="3.2" height="3.2" patternUnits="userSpaceOnUse" patternTransform="rotate(38)">
+      <line x1="0" y1="0" x2="0" y2="3.2" stroke="#2a190e" stroke-width=".8"/>
+    </pattern>
+    <pattern id="hatch2" width="3.6" height="3.6" patternUnits="userSpaceOnUse" patternTransform="rotate(-50)">
+      <line x1="0" y1="0" x2="0" y2="3.6" stroke="#2a190e" stroke-width=".7"/>
+    </pattern>
+    <radialGradient id="shadow"><stop offset="0" stop-color="#5a3d1e" stop-opacity=".35"/><stop offset="1" stop-color="#5a3d1e" stop-opacity="0"/></radialGradient>
+  </defs>
+</svg>
+
+<script>
+/* ============ drawing helpers ============ */
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = c => Math.max(0, Math.min(255, Math.round(c + (amt < 0 ? c : 255 - c) * amt)));
+  return "#" + [n >> 16, (n >> 8) & 255, n & 255].map(f).map(v => v.toString(16).padStart(2, "0")).join("");
+}
+// a colored-pencil shape: grainy fill, pencil outline, optional hatched shading
+function sh(d, c, o = {}) {
+  const stroke = o.stroke || shade(c, -0.45);
+  let s = `<path d="${d}" fill="${c}" stroke="${stroke}" stroke-width="${o.sw ?? 1.5}" stroke-linejoin="round" stroke-linecap="round" filter="url(#pencil)"/>`;
+  if (o.h) s += `<path d="${d}" fill="url(#${o.h2 ? "hatch2" : "hatch"})" opacity="${o.h}" filter="url(#rough)"/>`;
+  return s;
+}
+// loose pencil strokes (fur, feathers, highlights)
+function strokes(d, c, w = 1.1, op = .7) {
+  return `<path d="${d}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" opacity="${op}" filter="url(#rough)"/>`;
+}
+const ground = (cx = 100, rx = 62) => `<ellipse cx="${cx}" cy="141" rx="${rx}" ry="7" fill="url(#shadow)"/>`;
+const svg = inner => `<svg viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+
+/* ============ the animals ============ */
+const ART = {};
+
+ART["Bison"] = () => {
+  const fur = "#5b3c26", cape = "#7a5232", dark = "#2e1f14";
+  return svg(`
+  ${ground(102, 70)}
+  <g class="swish" style="transform-origin:0% 0%">
+    ${strokes("M178,62 C188,70 190,84 186,96", dark, 2.4, .9)}
+    ${sh("M182,92 C190,94 192,104 186,108 C180,108 178,100 182,92 Z", dark)}
+  </g>
+  ${sh("M150,98 L160,98 L162,136 L152,136 Z", shade(fur, -.2))}
+  ${sh("M86,100 L96,100 L95,136 L85,136 Z", shade(fur, -.25))}
+  <g class="breathe">
+    ${sh("M60,55 C62,35 80,24 98,28 C118,32 140,44 160,48 C178,52 184,66 180,82 C178,96 170,104 160,106 L80,108 C68,106 60,96 56,84 Z", fur, { h: .28 })}
+    ${strokes("M120,50 C134,54 150,56 162,60 M110,70 C130,74 150,74 170,72", shade(fur, .25), 1, .5)}
+  </g>
+  ${sh("M166,100 L176,96 L174,136 L165,136 Z", shade(fur, -.15))}
+  ${sh("M68,100 L79,100 L78,137 L67,137 Z", shade(fur, -.15))}
+  ${sh("M64,132 L80,132 L80,138 L64,138 Z M163,132 L177,132 L177,138 L163,138 Z", "#1c120b")}
+  <g class="breathe">
+    ${sh("M50,60 C52,38 70,24 92,28 C106,31 110,48 106,70 C104,90 98,104 86,110 C72,112 60,106 54,96 Z", cape, { h: .22 })}
+    ${strokes("M62,40 c4,-4 8,-4 12,0 M70,52 c4,-4 8,-4 12,0 M82,38 c4,-4 8,-4 12,0 M66,66 c4,-4 8,-4 12,0 M84,60 c4,-4 8,-4 12,0 M76,82 c4,-4 8,-4 12,0 M92,78 c3,-3 6,-3 9,0", shade(cape, .35), 1.2, .65)}
+  </g>
+  <g class="graze" style="transform-origin:100% 20%">
+    ${sh("M30,104 C32,118 40,126 47,123 C51,114 50,106 48,100 Z", dark)}
+    ${sh("M56,62 C44,56 30,64 24,79 C20,92 22,104 30,108 C38,112 48,108 54,100 C61,90 63,74 56,62 Z", shade(cape, -.15), { h: .3 })}
+    ${strokes("M36,70 c3,-3 6,-3 9,0 M30,84 c3,-3 6,-3 9,0 M44,90 c3,-3 6,-3 9,0", shade(cape, .3), 1.1, .6)}
+    ${sh("M44,64 C38,56 40,48 47,46 C45,53 48,58 53,62 Z", "#4a4038", { stroke: "#1a1410" })}
+    <ellipse cx="25" cy="99" rx="4" ry="3" fill="#1a110b" filter="url(#rough)"/>
+    <g class="blink"><circle cx="37" cy="81" r="2.3" fill="#120b07"/><circle cx="36.3" cy="80.3" r=".7" fill="#fff"/></g>
+  </g>`);
+};
+
+ART["Red Wolf"] = () => {
+  const coat = "#b26f45", back = "#6f5a4c", cream = "#ead6b6", dark = "#2b1d14";
+  return svg(`
+  ${ground(100, 64)}
+  <g class="swish" style="transform-origin:0% 0%">
+    ${sh("M154,64 C172,72 180,92 174,114 C170,121 162,119 162,110 C165,95 160,81 150,73 Z", "#8a6a54", { h: .2 })}
+    ${sh("M162,108 C166,114 170,119 174,114 C176,118 170,124 164,121 Z", dark)}
+  </g>
+  ${sh("M132,88 C140,104 144,120 138,138 L130,138 C134,120 128,106 120,94 Z", shade(coat, -.2))}
+  ${sh("M66,90 L74,90 L73,138 L65,138 Z", shade(coat, -.25))}
+  <g class="breathe">
+    ${sh("M58,58 C70,47 100,48 126,50 C146,52 158,58 160,72 C160,86 150,95 136,95 L84,95 C70,95 60,86 56,74 Z", coat, { h: .18 })}
+    ${sh("M70,52 C92,44 130,46 152,56 C140,58 112,60 84,62 C76,62 70,58 70,52 Z", back, { sw: 1 })}
+    ${sh("M78,88 C96,94 124,94 142,90 C134,97 92,98 78,88 Z", cream, { sw: .8 })}
+    ${strokes("M90,66 l6,3 M104,64 l6,3 M118,66 l6,3 M132,68 l5,3 M98,78 l6,2 M114,80 l6,2 M130,80 l5,2", shade(coat, -.35), 1, .55)}
+  </g>
+  ${sh("M146,86 C154,102 156,120 150,138 L142,138 C146,120 140,104 134,92 Z", coat)}
+  ${sh("M56,88 L65,88 L64,138 L55,138 Z", coat)}
+  ${sh("M53,135 L66,135 L66,139 L53,139 Z M140,135 L152,135 L152,139 L140,139 Z", dark)}
+  <g class="howl-lines">${strokes("M30,20 c-4,-3 -4,-8 0,-11 M22,16 c-6,-4 -6,-11 0,-15 M38,14 c-3,-2 -3,-6 0,-8", "#8a6a4a", 1.6, .9)}</g>
+  <g class="look m-howl" style="transform-origin:90% 90%">
+    ${sh("M40,50 C48,43 62,47 67,58 C71,72 67,88 58,94 C49,92 43,80 41,68 Z", "#d7b48c", { h: .14 })}
+    ${strokes("M48,60 l4,3 M46,70 l5,3 M50,80 l4,3 M58,66 l4,2", shade(coat,-.1), 1.1, .6)}
+    ${sh("M50,30 C44,26 34,28 28,34 L11,44 C8,47 10,51 14,51 L28,53 C34,57 44,57 50,53 C56,46 56,36 50,30 Z", coat, { h: .16 })}
+    ${sh("M12,46 C20,50 28,52 36,51 C30,56 18,54 12,50 Z", cream, { sw: .8 })}
+    <g class="flick" style="transform-origin:50% 100%">${sh("M44,31 L49,13 L55,31 Z", shade(coat, -.2))}${sh("M46.5,29 L49,19 L52,29 Z", cream, { sw: .5 })}</g>
+    ${sh("M37,31 L40,16 L46,29 Z", shade(coat, -.3))}
+    <ellipse cx="11" cy="46" rx="3" ry="2.4" fill="#1a110b"/>
+    <g class="blink"><ellipse cx="34" cy="38" rx="2.4" ry="1.8" fill="#c48a2a"/><circle cx="33.6" cy="38" r="1" fill="#120b07"/></g>
+  </g>`);
+};
+
+ART["American Flamingo"] = () => {
+  const pink = "#f2897a", deep = "#e0585a", leg = "#e58a86";
+  return svg(`
+  ${ground(124, 34)}
+  ${strokes("M122,92 L118,116 L122,139", leg, 2.6, 1)}
+  ${strokes("M116,139 L128,139", leg, 2.2, 1)}
+  ${strokes("M130,90 L144,108 L131,104", leg, 2.4, .95)}
+  <g class="bob">
+    <g class="breathe">
+      ${sh("M90,62 C110,49 150,51 161,66 C168,80 150,93 124,93 C104,93 87,82 90,62 Z", pink, { h: .15 })}
+      ${sh("M112,62 C132,55 154,58 163,70 C150,77 128,76 114,70 Z", "#ec7471", { h: .12, h2: true, stroke: "#d4605f" })}
+      ${sh("M154,66 C164,64 172,70 170,76 C164,78 158,74 154,66 Z", "#241615")}
+      ${strokes("M104,74 c6,2 12,2 18,0 M118,82 c6,2 12,2 18,0 M98,66 c5,2 10,2 15,0", shade(pink, .4), 1.1, .7)}
+    </g>
+    <g class="sway m-tuck" style="transform-origin:90% 95%">
+      ${strokes("M98,66 C82,60 74,46 81,32 C87,21 84,11 73,10", pink, 7.5, 1)}
+      ${strokes("M98,66 C82,60 74,46 81,32 C87,21 84,11 73,10", shade(pink, -.35), 1, .5)}
+      ${sh("M64,8 C68,3 78,4 80,11 C81,17 74,19 68,17 Z", pink)}
+      ${sh("M66,12 C59,13 56,19 58,27 C60,30 63,28 63,25 C62,20 65,17 69,16 Z", "#f3e6d4")}
+      ${sh("M58,22 C58,27 60,30 63,28 C62,26 62,24 62,22 Z", "#1c1210", { sw: .6 })}
+      <g class="blink"><circle cx="71" cy="10" r="1.3" fill="#f2c32b"/><circle cx="71" cy="10" r=".55" fill="#120b07"/></g>
+    </g>
+  </g>`);
+};
+
+ART["Bald Eagle"] = () => {
+  const brown = "#3f2b1d", wing = "#2f2016", white = "#f6f1e6", gold = "#efb52a";
+  return svg(`
+  ${ground(104, 52)}
+  ${sh("M40,128 C80,122 130,124 172,130 L172,135 C130,130 80,128 40,134 Z", "#7a5536", { h: .25 })}
+  ${strokes("M150,129 C158,122 166,120 172,121", "#7a5536", 2.2, .9)}
+  ${sh("M92,122 L86,142 L118,142 L114,122 Z", white, { stroke: "#a39a8a" })}
+  <g class="m-wingL" style="transform-origin:100% 70%">${sh("M92,66 C70,52 46,46 24,50 C30,56 28,60 34,62 C30,66 32,70 38,70 C36,76 40,78 46,78 C46,84 52,84 58,82 C66,84 80,84 90,86 Z", brown, { h: .25 })}</g>
+  <g class="m-wingR" style="transform-origin:0% 70%">${sh("M110,66 C132,52 156,46 178,50 C172,56 174,60 168,62 C172,66 170,70 164,70 C166,76 162,78 156,78 C156,84 150,84 144,82 C136,84 122,84 112,86 Z", brown, { h: .25 })}</g>
+  <g class="breathe">
+    ${sh("M90,58 C76,74 75,104 88,126 L118,127 C127,104 125,74 112,58 Z", brown, { h: .3 })}
+    ${sh("M106,62 C124,70 130,96 122,124 C114,126 108,118 108,100 Z", wing, { h: .25, h2: true })}
+    ${strokes("M110,78 c6,3 10,3 14,1 M110,90 c6,3 10,3 14,1 M110,102 c6,3 10,3 13,1 M112,114 c5,2 8,2 10,0 M88,84 c4,2 8,2 12,0 M86,98 c4,2 8,2 12,0", shade(brown, .35), 1, .6)}
+  </g>
+  ${sh("M90,124 C88,130 92,133 96,131 L98,126 Z M104,126 C104,132 108,134 112,131 L110,125 Z", gold, { sw: 1 })}
+  <g class="look" style="transform-origin:60% 100%">
+    ${sh("M86,64 C79,48 87,30 102,30 C115,30 121,43 116,60 Z", white, { stroke: "#a39a8a", h: .08 })}
+    ${strokes("M94,40 c4,1 8,0 12,-2 M98,50 c4,1 8,0 12,-2 M104,58 c3,1 6,0 9,-2", "#c9bfae", 1, .8)}
+    ${sh("M89,39 C80,39 73,45 75,53 C76,56 79,55 79,52 C80,48 84,47 89,49 Z", gold, { stroke: "#9c6a10" })}
+    <g class="blink"><circle cx="94" cy="40" r="2.1" fill="#f2c94c"/><circle cx="93.6" cy="40" r=".9" fill="#120b07"/></g>
+    ${strokes("M90,37 L99,38", "#5c4a36", 1.4, .9)}
+  </g>`);
+};
+
+ART["Ocelot"] = () => {
+  const gold = "#d9a55c", cream = "#f1e2c6", dark = "#2c1d12", spot = "#b07a3c";
+  const rosette = (x, y, rx, ry) => `<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" fill="${spot}" stroke="${dark}" stroke-width="1.7" stroke-dasharray="5 2.5" filter="url(#rough)"/>`;
+  return svg(`
+  ${ground(102, 66)}
+  <g class="twitch" style="transform-origin:0% 0%">
+    ${sh("M154,74 C172,80 182,96 184,120 L177,122 C175,101 166,89 150,84 Z", gold, { h: .12 })}
+    ${strokes("M163,80 c1,2 1,4 -1,5 M171,89 c1,2 0,4 -2,5 M176,100 l-3,2 M179,110 l-5,1", dark, 2, .8)}
+    ${sh("M177,116 L184,114 L185,122 L177,123 Z", dark)}
+  </g>
+  ${sh("M128,92 C134,106 138,122 132,138 L124,138 C128,122 122,108 116,96 Z", shade(gold, -.15))}
+  ${sh("M74,94 L82,94 L81,138 L73,138 Z", shade(gold, -.15))}
+  <g class="breathe">
+    ${sh("M56,72 C64,58 96,56 122,58 C144,60 156,66 158,80 C158,93 148,99 134,99 L80,99 C66,99 56,89 56,72 Z", gold, { h: .14 })}
+    ${sh("M74,92 C96,99 126,99 146,94 C136,101 90,102 74,92 Z", cream, { sw: .8 })}
+    ${rosette(78, 72, 5, 3.5)}${rosette(95, 65, 8, 4)}${rosette(116, 64, 6, 3.6)}${rosette(136, 68, 7.5, 4.2)}
+    ${rosette(87, 84, 7, 3.4)}${rosette(104, 77, 5, 3.2)}${rosette(122, 82, 8, 4)}${rosette(146, 82, 5, 3.6)}
+    ${strokes("M66,80 l3,0 M70,88 l2,1 M150,70 l2,2 M112,90 l3,0 M132,92 l3,0", dark, 2.2, .8)}
+  </g>
+  ${sh("M140,90 C148,104 150,122 144,138 L136,138 C140,122 134,106 128,96 Z", gold)}
+  ${sh("M60,90 L69,90 L68,138 L59,138 Z", gold)}
+  ${strokes("M62,104 l5,0 M62,114 l5,0 M142,104 l4,1 M140,116 l4,1", dark, 1.6, .7)}
+  ${sh("M57,135 L70,135 L70,139 L57,139 Z M136,135 L148,135 L148,139 L136,139 Z", shade(gold, -.25))}
+  ${sh("M48,68 C54,56 70,56 76,66 C76,80 68,90 60,92 C52,86 46,78 48,68 Z", gold, { h: .1 })}
+  <g transform="translate(2,-10)"><g class="look" style="transform-origin:100% 80%">
+    <g class="flick" style="transform-origin:50% 100%">${sh("M45,55 C45,43 55,41 56,52 Z", shade(gold, -.35))}<circle cx="51" cy="49" r="1.6" fill="#fff8e8"/></g>
+    ${sh("M33,57 C31,46 38,42 42,49 Z", shade(gold, -.35))}
+    ${sh("M60,62 C54,52 42,50 31,54 C22,58 18,66 20,74 C22,82 32,87 42,85 C53,83 61,74 60,62 Z", gold, { h: .1 })}
+    ${sh("M20,72 C22,80 30,84 36,82 C34,76 28,72 20,72 Z", cream, { sw: .8 })}
+    ${strokes("M38,58 C40,62 40,65 38,68 M44,58 C46,62 46,65 45,69 M28,70 C32,72 40,74 50,76", dark, 1.4, .8)}
+    <ellipse cx="21" cy="70" rx="2.4" ry="1.8" fill="#9c5a52"/>
+    <g class="blink"><ellipse cx="33" cy="64" rx="3" ry="2.3" fill="#b4b046" stroke="${dark}" stroke-width=".8"/><ellipse cx="33" cy="64" rx=".8" ry="2" fill="#120b07"/></g>
+  </g></g>`);
+};
+
+/* ---------- hoofed and other big mammals ---------- */
+ART["Alpaca"] = () => {
+  const wool = "#dcbb8c", dk = "#5a412b";
+  const curls = (d) => strokes(d, shade(wool, .45), 1.2, .8);
+  return svg(`
+  ${ground(110, 52)}
+  <g class="swish" style="transform-origin:0% 0%">${sh("M154,70 C162,70 166,78 162,86 C158,86 154,80 154,70 Z", wool)}</g>
+  ${sh("M138,96 L146,96 L145,138 L137,138 Z", shade(wool, -.15))}
+  ${sh("M80,96 L88,96 L87,138 L79,138 Z", shade(wool, -.15))}
+  <g class="breathe">
+    ${sh("M70,72 C68,56 92,51 120,53 C147,55 161,64 159,82 C157,98 141,105 118,105 L88,105 C74,103 68,91 70,72 Z", wool, { h: .12 })}
+    ${curls("M80,64 c3,-3 6,-3 8,0 M96,58 c3,-3 6,-3 8,0 M114,58 c3,-3 6,-3 8,0 M132,60 c3,-3 6,-3 8,0 M146,68 c3,-3 6,-3 8,0 M86,80 c3,-3 6,-3 8,0 M104,74 c3,-3 6,-3 8,0 M122,76 c3,-3 6,-3 8,0 M140,82 c3,-3 6,-3 8,0 M96,94 c3,-3 6,-3 8,0 M116,92 c3,-3 6,-3 8,0")}
+  </g>
+  ${sh("M148,94 L156,92 L156,138 L148,138 Z", wool)}
+  ${sh("M68,94 L77,94 L76,138 L68,138 Z", wool)}
+  ${sh("M67,135 L77,135 L77,139 L67,139 Z M147,135 L157,135 L157,139 L147,139 Z", dk)}
+  <g class="look" style="transform-origin:60% 100%">
+    ${sh("M58,30 C58,22 70,20 76,27 C80,44 83,62 86,78 L66,82 C64,64 61,48 58,30 Z", wool, { h: .1 })}
+    ${curls("M64,40 c3,-2 5,-2 7,0 M66,54 c3,-2 5,-2 7,0 M68,68 c3,-2 5,-2 7,0")}
+    <g class="flick" style="transform-origin:50% 100%">${sh("M69,14 C69,6 72,1 75,2 C76,8 74,12 73,15 Z", shade(wool, -.1))}</g>
+    ${sh("M61,14 C59,6 61,1 64,2 C66,7 65,12 65,15 Z", shade(wool, -.2))}
+    ${sh("M50,22 C46,14 56,8 66,10 C74,12 78,20 74,28 C70,34 58,36 52,32 C46,30 46,26 50,22 Z", wool)}
+    ${sh("M46,26 C46,22 50,20 54,22 C56,28 54,33 50,32 C47,31 46,29 46,26 Z", "#b89670", { sw: .8 })}
+    ${curls("M56,12 c3,-3 6,-3 9,0 M62,9 c2,-2 4,-2 6,0")}
+    <ellipse cx="47.5" cy="25" rx="1.2" ry="1" fill="#2a1a10"/>
+    <g class="blink"><circle cx="60" cy="20" r="2.4" fill="#1a110b"/><circle cx="59.3" cy="19.3" r=".7" fill="#fff"/></g>
+  </g>`);
+};
+
+ART["White-Tailed Deer"] = () => {
+  const coat = "#a8754a", white = "#f3ece0", dk = "#2b1c12";
+  return svg(`
+  ${ground(104, 54)}
+  <g class="twitch" style="transform-origin:20% 10%">${sh("M154,62 C164,60 167,72 160,80 C155,78 152,70 154,62 Z", white, { stroke: "#9c8a74" })}</g>
+  ${sh("M134,88 C140,102 142,118 138,138 L132,138 C134,120 130,104 124,92 Z", shade(coat, -.2))}
+  ${sh("M78,90 L83,90 L82,138 L77,138 Z", shade(coat, -.25))}
+  <g class="breathe">
+    ${sh("M66,66 C76,56 110,56 136,58 C152,60 160,68 158,80 C156,90 146,95 134,95 L84,95 C72,95 64,85 66,66 Z", coat, { h: .14 })}
+    ${sh("M80,90 C100,96 128,96 146,90 C138,97 94,98 80,90 Z", white, { sw: .7, stroke: "#b8a78f" })}
+    ${strokes("M92,64 l6,2 M108,62 l6,2 M124,64 l6,2 M98,76 l6,2 M116,78 l6,2 M134,74 l5,2", shade(coat, -.3), 1, .5)}
+  </g>
+  ${sh("M146,86 C152,102 152,120 148,138 L142,138 C144,120 142,104 136,92 Z", coat)}
+  ${sh("M67,88 L73,88 L72,138 L66,138 Z", coat)}
+  ${sh("M65,135 L73,135 L73,139 L65,139 Z M141,135 L149,135 L149,139 L141,139 Z", dk)}
+  ${strokes("M18,139 l-2,-7 M22,139 l0,-9 M26,139 l2,-7 M30,139 l-1,-6 M34,139 l2,-8", "#6f8f3e", 1.6, .9)}
+  <g class="look m-graze" style="transform-origin:80% 100%">
+    ${sh("M56,40 C62,35 72,39 75,50 C77,62 75,70 71,75 L60,73 C58,61 56,51 56,40 Z", coat, { h: .1 })}
+    ${sh("M58,56 C62,62 64,70 62,74 L60,73 C59,66 58,60 58,56 Z", white, { sw: .5 })}
+    <g class="flick" style="transform-origin:0% 100%">${sh("M56,32 C60,21 70,18 72,23 C68,30 63,34 58,36 Z", shade(coat, -.1))}${sh("M59,31 C62,25 67,22 69,24 C66,28 62,31 60,32 Z", "#e9cfb4", { sw: .4 })}</g>
+    ${sh("M60,36 C60,26 52,22 46,26 C42,30 44,34 48,36 Z", shade(coat, -.2))}
+    ${sh("M58,36 C54,30 46,28 38,32 L26,42 C24,46 26,49 30,49 L40,49 C48,49 56,46 60,42 Z", coat, { h: .1 })}
+    ${sh("M30,44 C34,46 38,47 42,46 C38,50 32,50 29,48 Z", white, { sw: .5 })}
+    <ellipse cx="26.5" cy="44" rx="2.4" ry="2" fill="#1a110b"/>
+    ${sh("M44,34 C48,32 52,34 52,38 C48,40 44,38 44,34 Z", white, { sw: .4 })}
+    <g class="blink"><circle cx="48" cy="36" r="2.4" fill="#120b07"/><circle cx="47.3" cy="35.3" r=".7" fill="#fff"/></g>
+  </g>`);
+};
+
+ART["Nigerian Dwarf Goat"] = () => {
+  const brown = "#8a5a34", white = "#f2ead9", black = "#2a221d";
+  return svg(`
+  ${ground(104, 50)}
+  <g class="twitch" style="transform-origin:0% 100%">${sh("M146,66 C150,56 156,54 158,58 C156,64 152,68 148,72 Z", brown)}</g>
+  ${sh("M128,94 L136,94 L135,138 L127,138 Z", shade(brown, -.2))}
+  ${sh("M82,96 L90,96 L89,138 L81,138 Z", shade(white, -.12))}
+  <g class="breathe">
+    ${sh("M64,72 C70,60 100,58 124,60 C142,62 150,70 148,84 C146,96 136,101 124,101 L80,101 C68,99 62,89 64,72 Z", brown, { h: .14 })}
+    ${sh("M70,74 C76,64 92,62 102,66 C104,80 98,96 86,100 C74,98 68,88 70,74 Z", white, { stroke: "#b6a68e", h: .06 })}
+    ${sh("M118,62 C130,60 140,64 144,72 C136,76 124,74 118,70 Z", black, { sw: .8 })}
+  </g>
+  ${sh("M138,92 L146,92 L145,138 L137,138 Z", brown)}
+  ${sh("M68,94 L77,94 L76,138 L67,138 Z", white, { stroke: "#b6a68e" })}
+  ${sh("M66,135 L77,135 L77,139 L66,139 Z M136,135 L146,135 L146,139 L136,139 Z", black)}
+  <g class="graze" style="transform-origin:100% 80%">
+    ${sh("M50,56 C58,52 68,58 70,70 L66,82 C60,80 54,72 52,66 Z", white, { stroke: "#b6a68e" })}
+    ${sh("M46,50 C46,40 52,34 59,38 C55,40 51,45 51,52 Z", "#6e655c", { stroke: "#2a221d" })}
+    ${sh("M44,52 C38,48 30,52 28,60 L22,72 C22,76 26,79 30,77 C38,77 46,73 50,66 C54,58 50,52 44,52 Z", white, { stroke: "#b6a68e", h: .06 })}
+    ${sh("M40,52 C34,52 32,58 34,64 C38,62 42,58 44,54 Z", brown, { sw: .6 })}
+    ${sh("M26,76 C26,82 28,86 30,86 C32,82 32,78 30,76 Z", "#d6cbb6", { sw: .6 })}
+    <g class="flick" style="transform-origin:0% 50%">${sh("M50,58 C58,58 64,62 66,65 C60,67 54,65 50,62 Z", brown)}</g>
+    <ellipse cx="23.5" cy="71" rx="1.6" ry="1.2" fill="#3a2a22"/>
+    <g class="blink"><ellipse cx="38" cy="60" rx="2.6" ry="1.8" fill="#b88a2a"/><rect x="36" y="59.5" width="4" height="1" fill="#120b07"/></g>
+  </g>`);
+};
+
+ART["Lynx"] = () => {
+  const fur = "#b8a184", pale = "#ece2cf", dk = "#2a2018";
+  return svg(`
+  ${ground(100, 58)}
+  <g class="twitch" style="transform-origin:0% 50%">${sh("M148,68 C158,66 162,74 158,82 C154,84 150,80 148,68 Z", fur)}${sh("M156,78 C158,82 158,84 156,85 C153,84 153,81 156,78 Z", dk, { sw: .5 })}</g>
+  ${sh("M124,90 C130,104 132,120 128,136 L118,136 C122,120 118,106 112,96 Z", shade(fur, -.15))}
+  ${sh("M76,92 L85,92 L84,136 L75,136 Z", shade(fur, -.15))}
+  <g class="breathe">
+    ${sh("M58,70 C66,58 96,56 120,58 C140,60 152,66 152,80 C152,92 142,98 130,98 L80,98 C66,98 58,88 58,70 Z", fur, { h: .16 })}
+    ${sh("M76,92 C96,98 122,98 140,92 C132,99 90,100 76,92 Z", pale, { sw: .7 })}
+    ${strokes("M84,68 l1,2 M98,64 l1,2 M112,66 l1,2 M126,64 l1,2 M92,78 l1,2 M106,76 l1,2 M120,78 l1,2 M136,74 l1,2 M140,84 l1,2", shade(fur, -.45), 1.8, .6)}
+  </g>
+  ${sh("M134,88 C142,102 144,120 140,136 L130,136 C134,120 128,104 122,94 Z", fur)}
+  ${sh("M60,88 L71,88 L70,136 L59,136 Z", fur)}
+  ${sh("M56,133 C56,129 72,129 73,133 L73,139 L56,139 Z M128,133 C128,129 142,129 143,133 L143,139 L128,139 Z", shade(fur, -.08))}
+  <g class="look" style="transform-origin:100% 90%">
+    ${sh("M54,64 C60,56 70,58 74,66 C74,78 68,88 60,90 C54,84 50,74 54,64 Z", fur)}
+    <g class="flick" style="transform-origin:50% 100%">${sh("M46,48 L50,32 L55,48 Z", shade(fur, -.2))}${strokes("M50,32 L51,23", dk, 1.6, 1)}</g>
+    ${sh("M31,50 L30,34 L40,46 Z", shade(fur, -.25))}${strokes("M30,34 L29,26", dk, 1.6, 1)}
+    ${sh("M58,58 C54,46 40,44 30,48 C20,52 18,62 20,70 C24,80 36,84 46,82 C56,80 62,70 58,58 Z", fur, { h: .1 })}
+    ${sh("M22,70 C22,84 40,92 54,84 C52,78 40,78 30,74 Z", pale, { sw: .8 })}
+    ${strokes("M26,80 l-4,6 M32,84 l-3,7 M40,86 l-1,7 M48,85 l1,6", pale, 1.4, .9)}
+    ${strokes("M34,52 l1,4 M38,52 l1,4 M24,74 L16,72 M24,76 L16,78", dk, 1, .7)}
+    <ellipse cx="22" cy="68" rx="2.2" ry="1.6" fill="#3a2620"/>
+    <g class="blink"><ellipse cx="32" cy="60" rx="3" ry="2.3" fill="#c8a43a" stroke="${dk}" stroke-width=".8"/><ellipse cx="32" cy="60" rx=".9" ry="2" fill="#120b07"/></g>
+  </g>`);
+};
+
+ART["Peccary"] = () => {
+  const coat = "#5f5549", collar = "#cbc2b2", dk = "#231c17";
+  return svg(`
+  ${ground(96, 58)}
+  ${sh("M128,96 L135,96 L134,138 L127,138 Z", shade(coat, -.25))}
+  ${sh("M82,96 L89,96 L88,138 L81,138 Z", shade(coat, -.25))}
+  <g class="breathe">
+    ${sh("M60,72 C66,53 100,48 128,52 C150,56 160,68 156,84 C152,98 138,103 124,103 L84,103 C70,101 60,91 60,72 Z", coat, { h: .3 })}
+    ${strokes("M72,56 l-2,-6 M80,52 l-1,-7 M90,50 l0,-7 M100,49 l1,-7 M110,49 l1,-6 M120,50 l2,-6 M132,53 l2,-5", shade(coat, -.4), 1.5, .85)}
+    ${strokes("M86,66 c6,1 12,1 18,0 M110,64 c6,1 12,1 18,0 M92,80 c6,1 12,1 18,0 M118,82 c6,1 12,1 18,0", shade(coat, .3), 1, .6)}
+    ${sh("M70,60 C76,72 78,88 74,102 L82,102 C84,88 82,72 78,56 Z", collar, { sw: .7, stroke: "#8e8676" })}
+  </g>
+  ${sh("M140,94 L147,94 L146,138 L139,138 Z", coat)}
+  ${sh("M66,94 L73,94 L72,138 L65,138 Z", coat)}
+  ${sh("M64,135 L73,135 L73,139 L64,139 Z M138,135 L147,135 L147,139 L138,139 Z", dk)}
+  <g class="graze" style="transform-origin:100% 40%">
+    ${sh("M66,62 C56,56 40,62 30,70 L18,80 C16,84 18,88 22,88 L28,88 C42,90 58,88 66,82 Z", coat, { h: .3 })}
+    ${sh("M16,79 C14,82 15,88 18,89 C21,89 22,84 20,80 Z", "#3a302a", { sw: .8 })}
+    <g class="flick" style="transform-origin:50% 100%">${sh("M56,60 L60,48 L66,60 Z", shade(coat, -.2))}</g>
+    <g class="blink"><circle cx="46" cy="70" r="1.8" fill="#120b07"/></g>
+    ${strokes("M30,80 c6,2 14,2 20,0", shade(coat, .3), 1, .6)}
+  </g>`);
+};
+
+ART["Red-Necked Wallaby"] = () => {
+  const gray = "#8e8882", red = "#b37150", pale = "#ece3d4", dk = "#2a221d";
+  return svg(`
+  ${ground(110, 64)}
+  <g class="swish" style="transform-origin:0% 50%">${sh("M118,120 C140,126 162,132 188,134 L188,139 C162,139 136,138 114,134 Z", gray, { h: .15 })}${sh("M178,133 L188,134 L188,139 L178,139 Z", dk, { sw: .5 })}</g>
+  ${sh("M84,128 L50,134 C45,136 46,140 52,140 L100,140 L102,128 Z", shade(gray, -.1))}
+  <g class="breathe">
+    ${sh("M88,60 C76,72 72,104 82,126 C92,138 118,138 124,124 C130,104 120,74 106,62 Z", gray, { h: .14 })}
+    ${sh("M86,70 C82,88 82,110 90,126 C100,122 102,100 100,80 Z", pale, { sw: .7, stroke: "#b8ab98" })}
+    ${sh("M88,58 C96,54 106,58 108,66 C102,72 92,74 86,70 Z", red, { sw: .8 })}
+    ${strokes("M106,84 c4,6 6,14 4,22 M112,96 c3,6 4,12 2,18", shade(gray, -.35), 1, .6)}
+  </g>
+  ${strokes("M90,84 C86,92 82,96 78,96 M94,86 C92,94 88,98 84,100", gray, 3, 1)}
+  <g class="look" style="transform-origin:80% 100%">
+    <g class="flick" style="transform-origin:50% 100%">${sh("M84,40 L86,20 L95,38 Z", gray)}${sh("M86,36 L87,25 L92,36 Z", pale, { sw: .4 })}</g>
+    ${sh("M78,40 L76,22 L86,36 Z", shade(gray, -.2))}
+    ${sh("M92,60 C90,46 84,38 72,36 L58,38 C53,40 53,45 58,46 L70,50 C76,60 84,64 92,60 Z", gray, { h: .1 })}
+    ${sh("M58,46 C64,48 70,50 74,52 C68,54 62,52 58,48 Z", pale, { sw: .5 })}
+    <ellipse cx="56" cy="41" rx="2.6" ry="2.2" fill="#1a110b"/>
+    <g class="blink"><circle cx="74" cy="42" r="2.3" fill="#120b07"/><circle cx="73.3" cy="41.3" r=".7" fill="#fff"/></g>
+  </g>`);
+};
+
+/* ---------- small mammals and primates ---------- */
+const branchH = (y = 120, x1 = 40, x2 = 170) => sh(`M${x1},${y} C${x1 + 40},${y - 5} ${x2 - 40},${y - 3} ${x2},${y + 2} L${x2},${y + 7} C${x2 - 40},${y + 3} ${x1 + 40},${y + 2} ${x1},${y + 7} Z`, "#7a5536", { h: .25 });
+const mound = (cx = 100) => sh(`M${cx - 44},140 C${cx - 30},122 ${cx + 30},122 ${cx + 44},140 Z`, "#a8805a", { h: .2 });
+
+ART["Black-Tailed Prairie Dog"] = () => {
+  const tan = "#c9a06a", pale = "#ead7b6", dk = "#2a1d12";
+  return svg(`
+  ${ground(100, 46)}
+  <clipPath id="pd-clip"><rect x="0" y="0" width="200" height="132"/></clipPath>
+  ${sh("M64,140 C74,128 126,128 136,140 Z", "#5a3e26", { sw: .8 })}
+  <g clip-path="url(#pd-clip)"><g class="m-pop"><g class="bob">
+    <g class="breathe">
+      ${sh("M92,136 C80,134 78,114 84,96 C88,80 92,68 98,62 C106,58 114,64 116,74 C120,92 122,118 112,136 Z", tan, { h: .12 })}
+      ${sh("M94,130 C88,118 88,100 94,84 C100,84 104,100 104,120 C104,128 100,132 94,130 Z", pale, { sw: .6 })}
+      ${sh("M112,128 C118,130 120,136 118,140 C114,140 112,134 112,128 Z", dk)}
+    </g>
+    ${strokes("M94,88 C90,94 88,98 86,98 M102,88 C100,94 98,98 96,99", shade(tan, -.25), 3, 1)}
+    <g class="look" style="transform-origin:50% 100%">
+      ${sh("M94,62 C90,50 98,42 108,44 C116,46 118,56 114,64 C108,68 98,68 94,62 Z", tan)}
+      ${sh("M108,46 C110,42 114,42 114,46 Z", shade(tan, -.25))}
+      ${sh("M92,58 C92,54 96,52 98,56 C98,60 94,62 92,58 Z", pale, { sw: .4 })}
+      <ellipse cx="93" cy="56" rx="1.4" ry="1.1" fill="#1a110b"/>
+      <g class="blink"><circle cx="101" cy="52" r="2" fill="#120b07"/><circle cx="100.4" cy="51.4" r=".6" fill="#fff"/></g>
+    </g>
+  </g></g></g>
+  ${sh("M56,140 C62,130 72,127 80,130 C90,134 110,134 120,130 C128,127 138,130 144,140 Z", "#a8805a", { h: .2 })}`);
+};
+
+ART["North American Beaver"] = () => {
+  const fur = "#6d4b2f", tail = "#3c302a", dk = "#1f150e";
+  return svg(`
+  ${ground(110, 66)}
+  <g class="splash">${strokes("M176,128 l-4,-10 M184,126 l2,-12 M192,128 l6,-8 M170,132 l-8,-4", "#6aa6c4", 1.6, 1)}</g>
+  <g class="swish m-slap" style="transform-origin:0% 50%">
+    ${sh("M138,118 C158,114 184,120 190,130 C188,140 160,142 138,136 Z", tail, { h: .4, h2: true })}
+    <path d="M138,118 C158,114 184,120 190,130 C188,140 160,142 138,136 Z" fill="url(#hatch)" opacity=".35"/>
+  </g>
+  <g class="breathe">
+    ${sh("M60,96 C60,72 84,60 110,62 C134,64 148,80 146,104 C144,124 128,134 104,134 L76,134 C64,130 60,116 60,96 Z", fur, { h: .2 })}
+    ${strokes("M80,76 c6,2 10,2 14,0 M104,72 c6,2 10,2 14,0 M90,92 c6,2 10,2 14,0 M116,92 c6,2 10,2 14,0 M98,110 c6,2 10,2 14,0 M124,110 c5,2 9,2 12,0", shade(fur, .3), 1.1, .6)}
+  </g>
+  ${sh("M70,128 C66,132 66,138 72,139 L88,139 C88,134 84,130 78,128 Z", shade(fur, -.3))}
+  ${strokes("M72,104 C68,112 66,116 64,118", shade(fur, -.2), 4, 1)}
+  <g class="look" style="transform-origin:100% 80%">
+    ${sh("M66,76 C56,68 42,70 36,80 C32,90 38,99 48,101 C58,103 66,96 67,88 Z", shade(fur, -.08), { h: .15 })}
+    ${sh("M58,72 C58,66 64,66 64,72 Z", shade(fur, -.3))}
+    ${sh("M40,96 L40,103 L45,103 L45,97 Z", "#e08a2e", { sw: .6, stroke: "#8a4a10" })}
+    <ellipse cx="36" cy="85" rx="2.6" ry="2" fill="#1a110b"/>
+    ${strokes("M38,90 L28,88 M38,92 L28,94", "#d8c8b0", .7, .8)}
+    <g class="blink"><circle cx="48" cy="80" r="2" fill="#120b07"/><circle cx="47.4" cy="79.4" r=".6" fill="#fff"/></g>
+  </g>`);
+};
+
+ART["Delmarva Fox Squirrel"] = () => {
+  const gray = "#9b9893", pale = "#f1ece2", dk = "#2a2622";
+  return svg(`
+  ${ground(110, 40)}
+  <g class="twitch" style="transform-origin:0% 100%">
+    ${sh("M110,132 C130,126 140,104 132,84 C126,66 132,48 148,44 C160,48 160,66 150,78 C144,92 150,114 140,128 C132,138 118,141 110,136 Z", gray, { h: .1 })}
+    ${strokes("M136,60 c4,-2 8,-2 10,2 M140,80 c4,-2 7,0 8,4 M142,100 c4,0 6,2 6,6 M136,120 c3,2 4,4 4,8 M146,50 l4,-4 M152,58 l5,-2", pale, 1.3, .8)}
+  </g>
+  <g class="breathe">
+    ${sh("M90,136 C80,128 80,104 88,90 C94,80 104,78 110,86 C118,100 118,124 110,136 Z", gray, { h: .12 })}
+    ${sh("M90,128 C86,116 86,102 92,92 C98,96 100,112 98,128 Z", pale, { sw: .6, stroke: "#b8b2a8" })}
+  </g>
+  ${sh("M84,136 L104,136 L104,140 L82,140 Z", shade(gray, -.2))}
+  ${strokes("M92,100 C88,104 86,106 84,106", shade(gray, -.25), 3, 1)}
+  <g class="look" style="transform-origin:80% 100%">
+    ${sh("M86,88 C80,80 84,68 94,66 C104,66 108,74 106,82 C102,90 92,92 86,88 Z", gray)}
+    <g class="flick" style="transform-origin:50% 100%">${sh("M98,68 L100,58 L104,68 Z", shade(gray, -.15))}</g>
+    ${sh("M82,82 C82,78 86,76 88,80 C88,84 84,86 82,82 Z", pale, { sw: .4 })}
+    <ellipse cx="82.5" cy="80" rx="1.4" ry="1.1" fill="#3a2a22"/>
+    <g class="blink"><circle cx="92" cy="75" r="2" fill="#120b07"/><circle cx="91.4" cy="74.4" r=".6" fill="#fff"/></g>
+  </g>`);
+};
+
+ART["Cotton-Top Tamarin"] = () => {
+  const brown = "#4a3a2e", white = "#f4efe6", dk = "#1c1612";
+  return svg(`
+  ${branchH(110)}
+  <g class="swish" style="transform-origin:0% 0%">${strokes("M122,98 C130,110 128,124 132,140", brown, 4.5, 1)}${strokes("M122,98 C130,110 128,124 132,140", dk, 1, .5)}</g>
+  <g class="breathe">
+    ${sh("M86,98 C80,82 90,70 104,70 C118,70 126,82 122,100 C118,112 96,114 86,98 Z", brown, { h: .2 })}
+    ${sh("M90,96 C88,86 92,80 98,80 C102,88 100,100 96,108 C92,106 90,102 90,96 Z", white, { sw: .6, stroke: "#b8b0a2" })}
+    ${strokes("M104,76 c4,2 8,2 12,0 M108,88 c4,2 8,2 10,0", shade(brown, .35), 1, .6)}
+  </g>
+  ${strokes("M94,104 C92,110 90,112 90,112 M116,104 C116,108 118,110 118,110", white, 4, 1)}
+  <g class="look" style="transform-origin:80% 100%">
+    ${sh("M78,64 C74,48 88,38 102,46 C98,50 96,56 96,60 C90,56 84,56 78,64 Z", white, { stroke: "#b8b0a2" })}
+    ${strokes("M80,56 l-6,-8 M84,50 l-4,-10 M90,46 l-1,-10 M96,46 l2,-8 M78,62 l-8,-4", white, 1.6, .95)}
+    ${sh("M80,74 C76,66 80,58 88,58 C96,58 98,66 96,72 C94,78 84,80 80,74 Z", dk)}
+    <g class="blink"><circle cx="84" cy="67" r="1.5" fill="#6b4a2a"/><circle cx="91" cy="67" r="1.5" fill="#6b4a2a"/></g>
+  </g>`);
+};
+
+ART["Black-Tufted Marmoset"] = () => {
+  const gray = "#8a857d", dk = "#1e1a17", white = "#f2ede4";
+  return svg(`
+  ${sh("M94,10 C92,50 96,100 92,140 L102,140 C104,100 102,50 104,10 Z", "#7a5536", { h: .25 })}
+  <g class="swish" style="transform-origin:50% 0%">
+    ${strokes("M112,104 C118,116 116,128 122,140", gray, 4.5, 1)}
+    <path d="M112,104 C118,116 116,128 122,140" fill="none" stroke="${dk}" stroke-width="4.6" stroke-dasharray="2.5 4.5" filter="url(#rough)"/>
+  </g>
+  <g class="breathe">
+    ${sh("M104,70 C116,72 122,88 118,104 C114,114 104,114 100,106 C96,92 96,76 104,70 Z", gray, { h: .2 })}
+    ${strokes("M106,80 c3,1 6,1 9,-1 M106,90 c3,1 6,1 9,-1 M106,100 c3,1 6,1 9,-1", dk, 1.2, .6)}
+  </g>
+  ${strokes("M104,76 C98,72 96,70 96,70 M114,108 C104,112 100,112 98,112 M104,84 C100,86 98,86 96,86", gray, 3.2, 1)}
+  <g class="look" style="transform-origin:30% 100%">
+    ${strokes("M101,57 L91,49 M117,54 L124,46", dk, 3.5, 1)}
+    ${strokes("M101,57 L93,51 M117,54 L122,48", "#3a3530", 1.6, .6)}
+    ${sh("M100,54 C108,48 118,52 118,62 C118,70 110,74 104,72 C98,70 96,60 100,54 Z", "#57514b")}
+    <ellipse cx="109" cy="54" rx="2.6" ry="1.6" fill="${white}"/>
+    <g class="blink"><circle cx="105" cy="61" r="1.6" fill="#6b4a2a"/><circle cx="112" cy="61" r="1.6" fill="#6b4a2a"/></g>
+  </g>`);
+};
+
+ART["Black-Handed Spider Monkey"] = () => {
+  const gold = "#a87b4c", dk = "#1e1813", face = "#6a4a36";
+  return svg(`
+  ${branchH(22, 20, 180)}
+  <g class="sway" style="transform-origin:50% 0%">
+    ${strokes("M114,86 C140,80 148,50 140,30 C138,22 132,22 132,28", gold, 4, 1)}
+    ${strokes("M112,58 C116,46 118,36 120,26", gold, 5, 1)}${sh("M116,22 C120,20 124,22 124,27 L118,28 Z", dk)}
+    ${strokes("M94,62 C84,76 76,88 68,98", gold, 5, 1)}${sh("M62,96 C66,94 70,96 70,102 C66,104 62,102 62,96 Z", dk)}
+    ${strokes("M98,90 C94,106 90,116 86,124", gold, 5.5, 1)}${sh("M80,122 C84,120 90,122 90,128 L82,130 Z", dk)}
+    ${strokes("M108,92 C110,106 112,118 112,128", gold, 5.5, 1)}${sh("M108,126 C112,124 118,126 116,132 L108,132 Z", dk)}
+    <g class="breathe">${sh("M92,70 C88,58 98,48 110,52 C120,56 122,72 116,86 C110,96 96,94 92,84 Z", gold, { h: .14 })}
+    ${strokes("M98,62 c4,2 8,2 12,0 M98,74 c4,2 8,2 12,0", shade(gold, .3), 1, .6)}</g>
+    <g class="look" style="transform-origin:60% 100%">
+      ${sh("M100,52 C94,46 94,36 102,32 C110,30 116,36 114,46 C112,52 104,54 100,52 Z", shade(gold, -.25))}
+      ${sh("M100,48 C98,42 100,38 104,38 C108,38 110,42 108,48 C106,51 102,51 100,48 Z", face, { sw: .6 })}
+      <g class="blink"><circle cx="102.5" cy="42" r="1.4" fill="#f0e2c8"/><circle cx="106.5" cy="42" r="1.4" fill="#f0e2c8"/><circle cx="102.5" cy="42" r=".7" fill="#120b07"/><circle cx="106.5" cy="42" r=".7" fill="#120b07"/></g>
+    </g>
+  </g>`);
+};
+
+/* ---------- birds ---------- */
+ART["Sandhill Crane"] = () => {
+  const gray = "#a3a19b", dk = "#3a3a3a";
+  return svg(`
+  ${ground(124, 34)}
+  ${strokes("M118,94 L114,118 L118,139 M112,139 L124,139", dk, 2.2, 1)}
+  ${strokes("M128,94 L134,118 L132,139 M126,139 L138,139", dk, 2.2, 1)}
+  <g class="bob"><g class="breathe">
+    ${sh("M88,66 C104,56 140,58 154,72 C160,82 150,92 132,94 C110,96 92,88 88,66 Z", gray, { h: .12 })}
+    ${sh("M138,70 C156,68 172,80 170,96 C158,98 146,90 138,80 Z", shade(gray, -.25), { h: .2, h2: true })}
+    ${strokes("M150,78 c6,4 10,8 14,14 M144,82 c6,4 8,8 10,12", shade(gray, .4), 1, .7)}
+    ${strokes("M104,72 c6,2 12,2 18,0 M112,82 c6,2 12,2 18,0 M98,64 c4,2 8,2 12,0", "#b8916a", 1.2, .6)}
+  </g>
+  <g class="sway" style="transform-origin:90% 95%">
+    ${strokes("M96,68 C88,54 84,40 86,24", gray, 6, 1)}
+    ${strokes("M96,68 C88,54 84,40 86,24", shade(gray, -.35), 1, .5)}
+    ${sh("M80,18 C84,13 93,13 95,20 C95,26 89,29 84,27 Z", gray)}
+    ${sh("M83,15 C86,12 92,13 93,17 C90,19 85,19 83,15 Z", "#d24438", { sw: .6 })}
+    ${sh("M86,23 C89,25 93,25 95,22 C94,27 89,29 86,27 Z", "#f0ece4", { sw: .4 })}
+    ${sh("M81,19 L60,25 L81,23 Z", "#3a3530", { sw: .7 })}
+    <g class="blink"><circle cx="87" cy="19" r="1.3" fill="#e8a020"/><circle cx="87" cy="19" r=".55" fill="#120b07"/></g>
+  </g></g>`);
+};
+
+ART["Burrowing Owl"] = () => {
+  const brown = "#8c6a48", pale = "#efe4cf", dk = "#2a1d12";
+  return svg(`
+  ${ground(100, 40)}
+  ${mound(100)}
+  ${strokes("M96,124 L95,137 M92,137 L99,137 M108,124 L109,137 M106,137 L113,137", "#8a8070", 1.6, 1)}
+  <g class="breathe">
+    ${sh("M88,128 C80,116 80,94 88,82 C96,72 112,72 118,84 C124,98 122,118 114,128 Z", brown, { h: .14 })}
+    ${sh("M92,124 C88,112 88,98 94,88 C102,90 106,104 106,124 Z", pale, { sw: .6, stroke: "#b8a888" })}
+    ${strokes("M92,100 l8,0 M92,108 l10,0 M94,116 l10,0", brown, 1.4, .8)}
+    ${strokes("M110,90 l2,0 M114,98 l2,0 M110,106 l2,0 M116,110 l2,0 M112,118 l2,0", pale, 2, .9)}
+  </g>
+  <g class="look m-swivel" style="transform-origin:50% 100%">
+    ${sh("M86,80 C82,64 92,54 104,54 C116,54 124,64 120,80 C116,88 92,88 86,80 Z", brown)}
+    ${strokes("M98,58 l2,0 M108,58 l2,0 M114,64 l2,0 M92,64 l2,0", pale, 2, .9)}
+    ${strokes("M88,68 C94,64 100,66 103,70 C106,66 112,64 118,68", pale, 2, 1)}
+    ${sh("M100,78 L103,82 L106,78 Z", "#c8b48a", { sw: .5 })}
+    <g class="blink">
+      <circle cx="96" cy="73" r="4" fill="#f2c732" stroke="${dk}" stroke-width=".9"/><circle cx="110" cy="73" r="4" fill="#f2c732" stroke="${dk}" stroke-width=".9"/>
+      <circle cx="96" cy="73" r="2" fill="#120b07"/><circle cx="110" cy="73" r="2" fill="#120b07"/>
+    </g>
+  </g>`);
+};
+
+ART["Greater Rhea"] = () => {
+  const gray = "#8e8679", dk = "#3a342c", pale = "#cfc7b8";
+  return svg(`
+  ${ground(116, 46)}
+  ${strokes("M108,96 L104,118 L108,138 M100,139 L116,139", "#9a9180", 3, 1)}
+  ${strokes("M126,96 L134,116 L130,138 M122,139 L138,139", "#9a9180", 3, 1)}
+  <g class="breathe">
+    ${sh("M80,70 C96,50 140,52 156,70 C164,84 150,100 124,100 C100,100 78,92 80,70 Z", gray, { h: .16 })}
+    ${strokes("M98,74 c4,10 6,18 4,26 M112,72 c4,10 6,18 4,28 M126,72 c4,10 6,18 4,28 M140,72 c4,10 4,16 2,24 M150,74 c2,8 2,14 0,20", shade(gray, .35), 1.2, .7)}
+    ${strokes("M90,64 c6,-2 12,-2 18,0 M114,60 c6,-2 12,-2 18,0", shade(gray, -.3), 1, .6)}
+  </g>
+  <g class="look" style="transform-origin:90% 100%">
+    ${strokes("M88,72 C76,58 70,40 74,18", gray, 6, 1)}
+    ${strokes("M86,70 C80,62 77,56 76,50", dk, 6.5, 1)}
+    ${strokes("M88,72 C76,58 70,40 74,18", pale, 1, .5)}
+    ${sh("M66,16 C70,10 80,12 80,18 C78,22 70,22 66,20 Z", gray)}
+    ${sh("M67,17 L57,18 L66,20 Z", "#8a7a64", { sw: .6 })}
+    <g class="blink"><circle cx="72" cy="16" r="1.3" fill="#2a1a10"/></g>
+  </g>`);
+};
+
+ART["North American Ducks"] = () => {
+  const body = "#dcd6ca", chest = "#7a4a32", head = "#2e6b40", dk = "#1e1a17";
+  return svg(`
+  <ellipse cx="112" cy="122" rx="60" ry="11" fill="#9fcde4" stroke="#6aa6c4" stroke-width="1.4" filter="url(#pencil)"/>
+  ${strokes("M64,120 c8,-3 16,-3 24,0 M128,126 c8,-3 16,-3 24,0 M100,130 c6,-2 12,-2 18,0", "#ffffff", 1.2, .8)}
+  <g class="bob">
+    <g class="breathe">
+      ${sh("M70,104 C72,88 92,82 120,84 C146,86 160,94 156,108 C150,120 120,122 96,120 C80,118 70,114 70,104 Z", body, { h: .1, stroke: "#9a9284" })}
+      ${sh("M110,90 C126,86 146,90 152,100 C140,104 122,102 110,98 Z", "#9a8e7e", { sw: .8 })}
+      ${sh("M128,96 L142,96 L140,101 L128,100 Z", "#3a5aa8", { sw: .6 })}
+      ${sh("M152,96 C160,94 166,98 164,104 C158,106 154,102 152,96 Z", dk)}
+      ${strokes("M160,94 c3,-4 6,-4 6,0", dk, 1.4, 1)}
+      ${sh("M70,104 C70,92 80,86 92,86 C90,100 90,112 94,120 C80,118 70,114 70,104 Z", chest, { h: .15 })}
+    </g>
+    <g class="look" style="transform-origin:50% 100%">
+      ${sh("M72,88 C66,76 68,62 80,60 C92,60 94,72 90,84 Z", head, { h: .15 })}
+      ${strokes("M74,86 C80,89 86,89 90,86", "#ffffff", 2, 1)}
+      ${sh("M70,68 C62,70 56,74 56,76 C62,78 68,76 72,74 Z", "#e4c23a", { sw: .8 })}
+      <g class="blink"><circle cx="78" cy="68" r="1.6" fill="#120b07"/></g>
+    </g>
+  </g>`);
+};
+
+ART["Australian Aviary"] = () => {
+  const cream = "#efe6d4", brown = "#6b4a30", rufous = "#b0643a", dk = "#2a1d12";
+  return svg(`
+  ${branchH(120)}
+  <g class="swish" style="transform-origin:50% 0%">${sh("M106,118 L110,142 L122,140 L118,118 Z", rufous, { h: .2 })}${strokes("M108,126 l12,-1 M109,132 l12,-1 M110,138 l11,-1", dk, 1.2, .8)}</g>
+  ${sh("M98,120 C96,126 100,128 104,126 Z M110,120 C110,126 114,128 118,124 Z", "#a89a88", { sw: .6 })}
+  <g class="breathe">
+    ${sh("M96,60 C84,72 84,104 94,122 L118,122 C124,100 120,74 110,62 Z", cream, { stroke: "#b8a88e", h: .06 })}
+    ${sh("M104,66 C120,72 126,100 118,124 C110,120 106,104 106,88 Z", brown, { h: .2, h2: true })}
+    ${strokes("M110,78 l2,1 M114,86 l2,1 M110,94 l2,1 M116,96 l2,1 M112,104 l2,1", "#7ab8d8", 2.2, 1)}
+  </g>
+  <g class="look" style="transform-origin:60% 100%">
+    ${sh("M90,62 C84,48 92,36 104,36 C116,36 120,48 116,58 Z", cream, { stroke: "#b8a88e" })}
+    ${sh("M98,38 C106,34 116,38 118,46 C110,44 102,42 98,38 Z", brown, { sw: .7 })}
+    ${strokes("M96,48 C102,48 110,50 116,54", brown, 2.4, .9)}
+    ${sh("M93,46 C80,47 70,50 64,55 C72,56 84,55 95,52 Z", "#3a302a", { sw: .8 })}
+    ${sh("M94,52 C84,55 74,56 66,56 C74,59 86,58 95,55 Z", "#d6ccb8", { sw: .6 })}
+    <g class="blink"><circle cx="100" cy="46" r="1.8" fill="#120b07"/><circle cx="99.5" cy="45.5" r=".5" fill="#fff"/></g>
+  </g>`);
+};
+
+ART["Spectacled Owl"] = () => {
+  const dark = "#3f2d22", buff = "#e9cf8c", white = "#f6f1e6";
+  return svg(`
+  ${branchH(126)}
+  <g class="breathe">
+    ${sh("M84,70 C76,88 78,116 92,130 L116,130 C128,116 128,88 120,70 Z", dark, { h: .25 })}
+    ${sh("M90,90 C88,106 92,122 100,128 C110,124 116,110 114,90 C106,86 96,86 90,90 Z", buff, { sw: .7, stroke: "#a88a4a" })}
+    ${strokes("M84,96 c4,6 6,14 6,22 M120,96 c-4,6 -6,14 -6,22", shade(dark, .3), 1, .6)}
+    ${sh("M86,72 C92,80 112,80 118,72 C112,88 92,88 86,72 Z", dark)}
+  </g>
+  ${sh("M94,128 C92,134 96,136 100,132 Z M106,128 C106,134 110,136 112,130 Z", "#a89a88", { sw: .6 })}
+  <g class="look m-swivel" style="transform-origin:50% 100%">
+    ${sh("M80,72 C74,52 84,36 102,36 C120,36 130,52 124,72 C116,82 88,82 80,72 Z", dark, { h: .2 })}
+    ${strokes("M86,52 C90,46 98,46 101,52 C104,46 112,46 118,52", white, 2.2, 1)}
+    ${strokes("M90,74 C96,78 108,78 114,74", white, 2.2, 1)}
+    ${sh("M100,62 L102,68 L104,62 Z", "#e8dcc0", { sw: .5 })}
+    <g class="blink">
+      <circle cx="93" cy="58" r="5" fill="#f2b632" stroke="#1a110b" stroke-width="1"/><circle cx="111" cy="58" r="5" fill="#f2b632" stroke="#1a110b" stroke-width="1"/>
+      <circle cx="93" cy="58" r="2.6" fill="#120b07"/><circle cx="111" cy="58" r="2.6" fill="#120b07"/>
+      <circle cx="92" cy="57" r=".8" fill="#fff"/><circle cx="110" cy="57" r=".8" fill="#fff"/>
+    </g>
+  </g>`);
+};
+
+ART["American Crow"] = () => {
+  const blk = "#24212a", sheen = "#5a6a8a";
+  return svg(`
+  ${ground(116, 44)}
+  ${strokes("M108,112 L106,138 M100,139 L112,139 M120,112 L122,138 M116,139 L128,139", "#1a181c", 1.8, 1)}
+  <g class="breathe">
+    ${sh("M80,96 C82,80 100,74 120,78 C140,82 150,92 160,104 L168,114 C152,114 138,111 124,113 C104,117 82,112 80,96 Z", blk, { h: .3 })}
+    ${strokes("M98,86 c8,-2 16,-2 24,2 M108,96 c8,-2 16,0 22,4 M120,104 c8,0 14,2 20,6", sheen, 1.2, .6)}
+  </g>
+  <g class="graze" style="transform-origin:100% 80%">
+    ${sh("M70,84 C68,72 78,66 88,70 C94,74 96,82 90,88 Z", blk)}
+    ${sh("M71,77 L55,81 L71,84 Z", "#1a181c", { sw: .7 })}
+    <g class="blink"><circle cx="79" cy="75" r="1.6" fill="#0a090b"/><circle cx="78.6" cy="74.6" r=".5" fill="#fff"/></g>
+  </g>`);
+};
+
+ART["Greater Roadrunner"] = () => {
+  const brown = "#7a5a3c", pale = "#ede3cf", dk = "#231a12";
+  return svg(`
+  ${ground(108, 40)}
+  ${strokes("M104,100 L100,118 L104,138 M96,139 L110,139 M114,100 L120,118 L116,138 M110,139 L124,139", "#6a7080", 1.8, 1)}
+  <g class="twitch" style="transform-origin:0% 100%">
+    ${sh("M124,86 C146,72 166,58 178,50 L183,56 C170,66 150,82 130,96 Z", brown, { h: .2 })}
+    ${strokes("M140,76 l6,4 M152,68 l6,4 M164,60 l6,4", pale, 1.4, .9)}
+  </g>
+  <g class="breathe">
+    ${sh("M84,82 C96,72 120,74 128,84 C134,94 124,104 108,104 C94,104 82,96 84,82 Z", brown, { h: .14 })}
+    ${sh("M86,86 C90,96 100,102 110,102 C100,94 94,88 86,86 Z", pale, { sw: .6 })}
+    ${strokes("M96,80 l4,6 M104,78 l4,6 M112,80 l4,6 M120,82 l3,5 M100,92 l3,5 M110,92 l3,5", pale, 1.3, .9)}
+    ${strokes("M98,80 l4,6 M106,78 l4,6 M114,80 l4,6", dk, 1, .7)}
+  </g>
+  <g class="look" style="transform-origin:60% 100%">
+    ${sh("M86,84 C78,74 76,60 82,52 C90,46 100,50 100,58 C98,66 94,74 94,84 Z", brown)}
+    ${strokes("M86,62 l4,3 M88,70 l4,3", pale, 1.2, .9)}
+    ${strokes("M86,50 l-2,-8 M90,48 l0,-9 M94,48 l2,-8 M98,51 l4,-6", dk, 1.8, 1)}
+    ${sh("M82,54 L60,60 L82,60 Z", "#3a302a", { sw: .7 })}
+    ${sh("M90,58 C94,58 96,62 94,64 C90,64 88,62 90,58 Z", "#4a8ac8", { sw: .4 })}
+    ${sh("M94,61 C97,61 99,64 97,66 C95,66 93,64 94,61 Z", "#e06a30", { sw: .4 })}
+    <g class="blink"><circle cx="88" cy="55" r="1.6" fill="#120b07"/><circle cx="87.5" cy="54.5" r=".5" fill="#fff"/></g>
+  </g>`);
+};
+
+ART["Red-Tailed Hawk"] = () => {
+  const brown = "#6a4a30", pale = "#f1e6d2", rufous = "#b5562e", gold = "#efb52a";
+  return svg(`
+  ${branchH(126)}
+  ${sh("M92,122 L86,142 L118,142 L114,122 Z", rufous, { h: .15 })}
+  <g class="breathe">
+    ${sh("M90,58 C76,74 75,104 88,126 L118,127 C127,104 125,74 112,58 Z", pale, { stroke: "#a89478", h: .05 })}
+    ${strokes("M86,92 c4,2 8,2 12,0 M100,96 c4,2 8,2 12,0 M90,100 c4,2 8,2 10,0 M104,104 c3,2 6,2 8,0", brown, 2, .8)}
+    ${sh("M106,62 C124,70 130,96 122,124 C114,126 108,118 108,100 Z", brown, { h: .25, h2: true })}
+    ${strokes("M110,78 c6,3 10,3 14,1 M110,90 c6,3 10,3 14,1 M110,102 c6,3 10,3 13,1", shade(brown, .4), 1, .6)}
+  </g>
+  ${sh("M90,124 C88,130 92,133 96,131 L98,126 Z M104,126 C104,132 108,134 112,131 L110,125 Z", gold, { sw: 1 })}
+  <g class="look" style="transform-origin:60% 100%">
+    ${sh("M86,64 C79,48 87,30 102,30 C115,30 121,43 116,60 Z", brown, { h: .15 })}
+    ${sh("M86,56 C90,62 100,64 110,60 C104,66 92,66 86,62 Z", pale, { sw: .5 })}
+    ${sh("M89,39 C80,39 73,45 75,53 C76,56 79,55 79,52 C80,48 84,47 89,49 Z", "#3a3230", { stroke: "#1a1410" })}
+    ${sh("M88,38 C92,36 94,40 92,42 Z", gold, { sw: .4 })}
+    <g class="blink"><circle cx="95" cy="40" r="2.1" fill="#7a4a1a"/><circle cx="94.6" cy="40" r=".9" fill="#120b07"/></g>
+  </g>`);
+};
+
+ART["Araçari"] = () => {
+  const green = "#2f4a34", yellow = "#e8c94a", red = "#c8352e", blk = "#1c1a18";
+  return svg(`
+  ${branchH(118)}
+  <g class="swish" style="transform-origin:50% 0%">${sh("M108,112 L112,142 L120,142 L118,112 Z", green, { h: .2 })}</g>
+  ${sh("M100,116 C98,122 102,124 106,120 Z M110,116 C110,122 114,124 116,118 Z", "#7a8a9a", { sw: .6 })}
+  <g class="breathe">
+    ${sh("M96,66 C86,80 88,104 98,116 L118,116 C122,98 118,78 110,66 Z", green, { h: .2 })}
+    ${sh("M96,74 C90,88 92,104 100,114 C104,98 104,84 102,72 Z", yellow, { sw: .7, stroke: "#a88a20" })}
+    ${sh("M110,106 C116,106 120,110 118,116 L110,116 Z", red, { sw: .6 })}
+  </g>
+  <g class="look" style="transform-origin:60% 100%">
+    ${sh("M92,66 C86,54 94,44 104,44 C112,44 116,52 112,62 Z", blk)}
+    ${sh("M94,52 C82,49 64,51 52,58 C64,63 82,62 96,60 Z", yellow, { stroke: "#9a7a10" })}
+    ${strokes("M94,52 C82,49 64,51 52,58", blk, 2, .9)}
+    ${strokes("M84,52 L84,61 M74,52 L74,61", blk, 1.4, .7)}
+    ${sh("M94,51 C96,54 96,58 94,61 C92,58 92,54 94,51 Z", red, { sw: .4 })}
+    <circle cx="102" cy="54" r="3.4" fill="#8ab0c8"/>
+    <g class="blink"><circle cx="102" cy="54" r="1.6" fill="#120b07"/></g>
+  </g>`);
+};
+
+ART["Pollinator Garden"] = () => {
+  const stem = "#5a8a3a", petal = "#c8669a", center = "#8a4a1e";
+  const flower = (x, y, r) => {
+    let p = "";
+    for (let i = 0; i < 9; i++) {
+      const a = i * 40;
+      p += `<ellipse cx="${x}" cy="${y + r * .9}" rx="${r * .32}" ry="${r}" transform="rotate(${a} ${x} ${y})" style="transform-box:view-box" fill="${petal}" stroke="${shade(petal, -.4)}" stroke-width="1" filter="url(#pencil)"/>`;
+    }
+    return p + `<circle cx="${x}" cy="${y}" r="${r * .55}" fill="${center}" stroke="#4a2410" stroke-width="1" filter="url(#pencil)"/>`;
+  };
+  return svg(`
+  ${ground(100, 50)}
+  ${strokes("M76,139 C76,120 74,104 72,88 M100,139 C100,118 102,96 104,72 M126,139 C126,124 128,112 130,98", stem, 2.6, 1)}
+  ${sh("M74,122 C64,114 58,116 56,120 C62,124 68,124 74,122 Z M102,110 C112,102 118,104 120,108 C114,112 108,112 102,110 Z M127,128 C118,120 112,122 110,126 C116,130 122,130 127,128 Z", stem, { sw: 1 })}
+  <g class="sway" style="transform-origin:50% 100%">${flower(72, 88, 8)}</g>
+  <g class="sway" style="transform-origin:50% 100%; animation-delay:-1.6s">${flower(104, 72, 9)}</g>
+  <g class="sway" style="transform-origin:50% 100%; animation-delay:-3s">${flower(130, 98, 7)}</g>
+  <g class="bob" style="animation-duration:2.2s">
+    <g transform="translate(100,36)">
+      <g class="flapL">${sh("M0,0 C-8,-14 -24,-16 -26,-6 C-26,2 -14,4 0,2 Z M0,2 C-12,4 -20,10 -16,16 C-12,20 -4,14 0,4 Z", "#e8822a", { stroke: "#2a1a10", sw: 1.4 })}${strokes("M-4,-2 L-20,-10 M-6,0 L-22,-2 M-3,4 L-14,12", "#2a1a10", 1, .9)}</g>
+      <g class="flapR">${sh("M0,0 C8,-14 24,-16 26,-6 C26,2 14,4 0,2 Z M0,2 C12,4 20,10 16,16 C12,20 4,14 0,4 Z", "#e8822a", { stroke: "#2a1a10", sw: 1.4 })}${strokes("M4,-2 L20,-10 M6,0 L22,-2 M3,4 L14,12", "#2a1a10", 1, .9)}</g>
+      <ellipse cx="0" cy="2" rx="1.6" ry="8" fill="#2a1a10"/>
+      ${strokes("M-1,-6 C-3,-12 -5,-14 -7,-15 M1,-6 C3,-12 5,-14 7,-15", "#2a1a10", .8, 1)}
+    </g>
+  </g>
+  <g class="bob" style="animation-duration:1.6s; animation-delay:-.8s">
+    <g transform="translate(140,70)">
+      <g class="flapR" style="animation-duration:.18s"><ellipse cx="2" cy="-5" rx="5" ry="3" fill="#eef4f8" stroke="#8aa0b0" stroke-width=".6" opacity=".85"/></g>
+      <ellipse cx="0" cy="0" rx="6" ry="4" fill="#f0c032" stroke="#2a1a10" stroke-width="1" filter="url(#pencil)"/>
+      ${strokes("M-1,-3.5 L-1,3.5 M2,-3.5 L2,3.5", "#2a1a10", 1.6, 1)}
+      <circle cx="-6" cy="0" r="2" fill="#2a1a10"/>
+    </g>
+  </g>`);
+};
+
+/* ============ amenity icons ============ */
+const ICON = (() => {
+  const st = 'fill="none" stroke="#3d4a26" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
+  const w = inner => `<svg viewBox="0 0 20 20">${inner}</svg>`;
+  return {
+    shop: w(`<rect x="4" y="7" width="12" height="10" rx="1.5" fill="#f3d9a4" ${st.replace('fill="none" ', '')}/><path d="M7,7 C7,2.5 13,2.5 13,7" ${st}/>`),
+    cafe: w(`<path d="M4,8 H14 V12 A4,4 0 0 1 10,16 H8 A4,4 0 0 1 4,12 Z" fill="#e8d2b0" stroke="#3d4a26" stroke-width="1.6" stroke-linejoin="round"/><path d="M14,9 H15.5 A2,2 0 0 1 15.5,13 H14 M8,2.5 c-1,1 1,2 0,3.5 M11,2.5 c-1,1 1,2 0,3.5" ${st}/>`),
+    truck: w(`<rect x="2" y="6" width="10" height="8" rx="1" fill="#f3d9a4" stroke="#3d4a26" stroke-width="1.6"/><path d="M12,8.5 H15.5 L18,11.5 V14 H12 Z" fill="#cfe0a8" stroke="#3d4a26" stroke-width="1.6" stroke-linejoin="round"/><circle cx="6" cy="15.5" r="1.8" fill="#3d4a26"/><circle cx="15" cy="15.5" r="1.8" fill="#3d4a26"/>`),
+    ice: w(`<path d="M5,9 C5,3.5 15,3.5 15,9 Z" fill="#a8d4ea" stroke="#3d4a26" stroke-width="1.4"/><path d="M5,9 H15 L13,17.5 H7 Z" fill="#f3d9a4" stroke="#3d4a26" stroke-width="1.6" stroke-linejoin="round"/>`),
+    restroom: w(`<circle cx="10" cy="3.8" r="2" fill="#3d4a26"/><path d="M10,7 V13 M6,9.5 H14 M10,13 L7,18 M10,13 L13,18" ${st}/>`),
+    accessible: w(`<circle cx="9" cy="3.5" r="1.7" fill="#3d4a26"/><path d="M9,6.5 V12 H14 L16,16 M9,9 H13" ${st}/><path d="M6.5,10.5 A4.5,4.5 0 1 0 13,15.5" ${st}/>`),
+    firstaid: w(`<rect x="3" y="3" width="14" height="14" rx="3" fill="#fffaf0" stroke="#3d4a26" stroke-width="1.4"/><path d="M10,6 V14 M6,10 H14" stroke="#c0392b" stroke-width="2.6" stroke-linecap="round"/>`),
+    parking: w(`<rect x="3" y="3" width="14" height="14" rx="3" fill="#cfe0f0" stroke="#3d4a26" stroke-width="1.4"/><path d="M8,15 V5.5 H11.5 A2.8,2.8 0 0 1 11.5,11 H8" ${st}/>`),
+    picnic: w(`<path d="M3,7.5 H17 M5.5,7.5 L3,16 M14.5,7.5 L17,16 M2,12 H18" ${st}/><path d="M3,7.5 H17" stroke="#8a6a4a" stroke-width="2.4" stroke-linecap="round"/>`)
+  };
+})();
+const AMENITY = {
+  ocelot_spot: { label: "Gift Shop", icon: "shop" },
+  beastro: { label: "Coati Café", icon: "cafe" },
+  "Kona Ice": { label: "Kona Ice", icon: "ice" },
+  "Food Trucks": { label: "Food Trucks", icon: "truck" }
+};
+const SERVICE = { "Restroom": "restroom", "Wheelchair Restroom": "accessible", "First Aid": "firstaid", "Parking": "parking", "Picnic Area": "picnic" };
+
+/* ============ the map ============ */
+require([
+  "esri/Map", "esri/Basemap", "esri/views/MapView", "esri/layers/TileLayer",
+  "esri/layers/FeatureLayer", "esri/geometry/Point", "esri/core/reactiveUtils"
+], (Map, Basemap, MapView, TileLayer, FeatureLayer, Point, reactiveUtils) => {
+
+  const base = new TileLayer({ url: "https://tiles.arcgis.com/tiles/Hx8jJ6McXQ0jnqLk/arcgis/rest/services/Zoo_Base_Features/MapServer" });
+  const animals = new FeatureLayer({ url: "https://services6.arcgis.com/Hx8jJ6McXQ0jnqLk/arcgis/rest/services/Salisbury_Zoo_Animals_Public_View/FeatureServer/0" });
+
+  const view = new MapView({
+    container: "viewDiv",
+    map: new Map({ basemap: new Basemap({ baseLayers: [base] }) }),
+    center: [-75.5821, 38.3608],
+    zoom: 19,
+    background: { color: "#d6e3a8" },
+    constraints: { minZoom: 17, maxZoom: 21, rotationEnabled: false, snapToZoom: false },
+    ui: { components: ["zoom"] },
+    popupEnabled: false
+  });
+
+  const layer = document.getElementById("critters");
+  const tip = document.getElementById("tip");
+  const items = [];
+  const placesLayer = document.getElementById("places");
+  const places = [];
+  const badges = [];
+  const BASE_W = 110;
+  // relative size of each animal on the map (1 = 110px at zoom 19)
+  const SIZE = {
+    "Bison": 1.25, "Greater Rhea": 1.05, "Alpaca": 1, "White-Tailed Deer": 1, "Red Wolf": 1,
+    "Sandhill Crane": .95, "American Flamingo": .9, "Lynx": .9, "Ocelot": .85, "Peccary": .85,
+    "Red-Necked Wallaby": .85, "Bald Eagle": .8, "Black-Handed Spider Monkey": .8, "North American Beaver": .75,
+    "Nigerian Dwarf Goat": .7, "Red-Tailed Hawk": .7, "Pollinator Garden": .65, "North American Ducks": .65,
+    "Greater Roadrunner": .65, "Spectacled Owl": .6, "Australian Aviary": .6, "Cotton-Top Tamarin": .6,
+    "Black-Tufted Marmoset": .55, "Delmarva Fox Squirrel": .55, "Black-Tailed Prairie Dog": .55,
+    "American Crow": .55, "Araçari": .55, "Burrowing Owl": .5
+  };
+
+  // small screen nudges where neighbors overlap (pixels at zoom 19)
+  const NUDGE = { "Delmarva Fox Squirrel": [-16, 0], "Cotton-Top Tamarin": [6, -14] };
+
+  view.when(async () => {
+    const { features } = await animals.queryFeatures({
+      where: "Show_Hide = 'Show'", outFields: ["Alias", "Name"], returnGeometry: true, outSpatialReference: view.spatialReference
+    });
+    features.forEach((f, i) => {
+      const name = f.attributes.Alias || f.attributes.Name;
+      if (!ART[name]) return; // buildings and anything without a drawing stay off the map
+      const w = BASE_W * (SIZE[name] || .8);
+      const el = document.createElement("div");
+      el.className = "critter";
+      el.style.width = w + "px";
+      el.innerHTML = ART[name]();
+      el.style.setProperty("--d", `-${(i * 1.37) % 6}s`); // desync the animations
+      layer.appendChild(el);
+      items.push({ el, name, pt: f.geometry, w, h: w * .75, n: NUDGE[name] || [0, 0] });
+    });
+    // place names: covers the small labels baked into the tiles with sketch-style tags
+    try {
+      const bldg = await new FeatureLayer({ url: "https://services6.arcgis.com/Hx8jJ6McXQ0jnqLk/arcgis/rest/services/Zoo_Basemap_as_Web_Map_2_WFL1/FeatureServer/15" })
+        .queryFeatures({ where: "Name IS NOT NULL AND Name <> ''", outFields: ["Name"], returnGeometry: true, outSpatialReference: view.spatialReference });
+      const swings = await new FeatureLayer({ url: "https://services6.arcgis.com/Hx8jJ6McXQ0jnqLk/arcgis/rest/services/Zoo_Basemap_as_Web_Map_2_WFL1/FeatureServer/11" })
+        .queryFeatures({ where: "1=1", outFields: ["Name"], returnGeometry: true, outSpatialReference: view.spatialReference });
+      [...bldg.features, ...swings.features].filter(f => (f.attributes.Name || "").trim()).forEach((f, i) => {
+        const el = document.createElement("div");
+        el.className = "place";
+        el.textContent = f.attributes.Name.trim();
+        el.style.setProperty("--r", `${((i * 7) % 5) - 2}deg`);
+        placesLayer.appendChild(el);
+        places.push({ el, pt: f.geometry.centroid || f.geometry.extent.center });
+      });
+    } catch (e) { console.warn("Place names unavailable", e); }
+
+    // amenities (food, shop) as pills; services (restrooms, first aid, parking, picnic) as icon badges
+    try {
+      const am = await new FeatureLayer({ url: "https://services6.arcgis.com/Hx8jJ6McXQ0jnqLk/arcgis/rest/services/Zoo_Amenities_View/FeatureServer/0" })
+        .queryFeatures({ where: "Name IS NOT NULL", outFields: ["Name", "Days_Open"], returnGeometry: true, outSpatialReference: view.spatialReference });
+      am.features.forEach(f => {
+        const key = (f.attributes.Name || "").trim();
+        const def = AMENITY[key] || { label: key.replace(/_/g, " "), icon: "shop" };
+        if (!def.label) return;
+        const el = document.createElement("div");
+        el.className = "amenity";
+        const closed = /closed/i.test(f.attributes.Days_Open || "");
+        el.innerHTML = ICON[def.icon] + `<span>${def.label}</span>` + (closed ? "<small>closed for season</small>" : "");
+        placesLayer.appendChild(el);
+        places.push({ el, pt: f.geometry, r: 0 });
+      });
+
+      const misc = await new FeatureLayer({ url: "https://services6.arcgis.com/Hx8jJ6McXQ0jnqLk/arcgis/rest/services/Zoo_Basemap_as_Web_Map_2_WFL1/FeatureServer/3" })
+        .queryFeatures({ where: "1=1", outFields: ["Name"], returnGeometry: true, outSpatialReference: view.spatialReference });
+      const groups = []; // merge services that sit within a few meters of each other
+      misc.features.forEach(f => {
+        const name = (f.attributes.Name || "").trim();
+        if (!SERVICE[name]) return;
+        const g = groups.find(g => Math.hypot(g.pt.x - f.geometry.x, g.pt.y - f.geometry.y) < 10);
+        if (g) { if (!g.names.includes(name)) g.names.push(name); } else groups.push({ pt: f.geometry, names: [name] });
+      });
+      groups.forEach(g => {
+        const el = document.createElement("div");
+        el.className = "badge";
+        el.innerHTML = g.names.map(n => ICON[SERVICE[n]]).join("");
+        placesLayer.appendChild(el);
+        const b = { el, pt: g.pt, r: 0, name: g.names.join(" · ") };
+        places.push(b); badges.push(b);
+      });
+    } catch (e) { console.warn("Amenities unavailable", e); }
+
+    place();
+    reactiveUtils.watch(() => [view.extent, view.size], place);
+  });
+
+  function place() {
+    const s = Math.min(2.2, Math.max(.45, Math.pow(2, view.zoom - 19)));
+    for (const it of items) {
+      const p = view.toScreen(it.pt);
+      if (!p) continue;
+      it.x = p.x + it.n[0] * s; it.y = p.y + it.n[1] * s; it.s = s;
+      // feet sit on the point; scaling pivots around the feet
+      it.el.style.transform = `translate(${it.x - it.w / 2}px, ${it.y - it.h * .92}px) scale(${s})`;
+      it.el.style.zIndex = Math.round(p.y);
+    }
+    const ts = Math.min(1.4, Math.max(.7, Math.pow(2, (view.zoom - 19) * .5)));
+    for (const pl of places) {
+      const p = view.toScreen(pl.pt);
+      if (!p) continue;
+      pl.x = p.x; pl.y = p.y; pl.ts = ts;
+      pl.el.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -50%) rotate(${pl.r === 0 ? "0deg" : "var(--r)"}) scale(${ts})`;
+    }
+  }
+
+  // moments: every 10 to 15 seconds one random on-screen animal does its thing; hovering triggers it too
+  const MOMENT = {
+    "Red Wolf": 3200, "White-Tailed Deer": 4500, "Black-Tailed Prairie Dog": 3600, "American Flamingo": 4500,
+    "Bald Eagle": 2600, "North American Beaver": 2400, "Burrowing Owl": 3400, "Spectacled Owl": 3400
+  };
+  const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let lastMoment = null;
+  function playMoment(it) {
+    if (calm || it.busy || !MOMENT[it.name]) return;
+    it.busy = true;
+    it.el.classList.add("moment");
+    setTimeout(() => { it.el.classList.remove("moment"); setTimeout(() => { it.busy = false; }, 1500); }, MOMENT[it.name]);
+  }
+  (function schedule() {
+    setTimeout(() => {
+      const { width, height } = view;
+      const pool = items.filter(it => MOMENT[it.name] && !it.busy && it !== lastMoment &&
+        it.x > 0 && it.x < width && it.y > 0 && it.y < height);
+      if (pool.length && !document.hidden) { lastMoment = pool[Math.floor(Math.random() * pool.length)]; playMoment(lastMoment); }
+      schedule();
+    }, 10000 + Math.random() * 5000);
+  })();
+
+  // name on hover (map stays fully draggable)
+  view.on("pointer-move", e => {
+    let best = null, bd = 1e9;
+    for (const it of items) {
+      const r = Math.max(14, it.w * .4 * it.s);
+      const d = Math.hypot(e.x - it.x, e.y - (it.y - it.h * .45 * it.s));
+      if (d < r && d < bd) { bd = d; best = it; }
+    }
+    if (!best) for (const b of badges) {
+      const d = Math.hypot(e.x - b.x, e.y - b.y);
+      if (d < 14 * b.ts && d < bd) { bd = d; best = { name: b.name, x: b.x, y: b.y + 10 * b.ts }; }
+    }
+    if (best && best.el) playMoment(best);
+    if (best) {
+      tip.textContent = best.name;
+      tip.style.left = best.x + "px";
+      tip.style.top = (best.y + 2) + "px";
+      tip.style.opacity = 1;
+    } else tip.style.opacity = 0;
+  });
+});
+</script>
+</body>
+</html>
